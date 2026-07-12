@@ -1,0 +1,18 @@
+{
+  "components/dashboard/DashboardGrid.tsx -> react-grid-layout/legacy": {
+    "id": "components/dashboard/DashboardGrid.tsx -> react-grid-layout/legacy",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_react-grid-layout_dist_legacy_mjs.js"
+    ]
+  },
+  "components/dashboard/WidgetRenderer.tsx -> leaflet": {
+    "id": "components/dashboard/WidgetRenderer.tsx -> leaflet",
+    "files": []
+  },
+  "components/dashboard/WidgetRenderer.tsx -> leaflet.heat": {
+    "id": "components/dashboard/WidgetRenderer.tsx -> leaflet.heat",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_leaflet_heat_dist_leaflet-heat_js.js"
+    ]
+  }
+}

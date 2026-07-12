@@ -1,0 +1,7 @@
+{
+  "/api/dashboard/widgets/route": "app/api/dashboard/widgets/route.js",
+  "/api/dashboard/catalog/route": "app/api/dashboard/catalog/route.js",
+  "/api/heatmap/route": "app/api/heatmap/route.js",
+  "/api/dashboard/insights/route": "app/api/dashboard/insights/route.js",
+  "/dashboard/page": "app/dashboard/page.js"
+}

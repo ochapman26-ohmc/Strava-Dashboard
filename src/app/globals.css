@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #f4f4f5;
+  --card: #14141f;
+  --card-border: #27273a;
+  --accent: #fc4c02;
+  --accent-hover: #e04402;
+  --muted: #71717a;
+  --success: #22c55e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-muted: var(--muted);
+  --color-success: var(--success);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #fc4c02 0%, #ff6b35 50%, #ffa500 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--foreground);
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 500;
+  border: 1px solid var(--card-border);
+  transition: border-color 0.2s;
+}
+
+.btn-secondary:hover {
+  border-color: var(--muted);
+}
+
+.progress-bar {
+  height: 6px;
+  background: var(--card-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #ff6b35);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.dashboard-grid .react-grid-item {
+  transition: box-shadow 0.2s ease;
+}
+
+.dashboard-grid .react-grid-item.react-draggable-dragging {
+  z-index: 10;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.dashboard-grid .react-resizable-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dashboard-grid.edit-mode .react-resizable-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dashboard-grid.edit-mode .react-resizable-handle::after {
+  display: none;
+}
+
+.widget-resize-handle {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--card-border);
+  color: var(--muted);
+  cursor: se-resize;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.dashboard-grid.edit-mode .react-grid-item:hover .widget-resize-handle,
+.dashboard-grid.edit-mode .react-grid-item.react-resizable-resizing .widget-resize-handle {
+  opacity: 1;
+}
+
+.widget-resize-handle:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.dashboard-grid .react-grid-placeholder {
+  background: var(--accent) !important;
+  opacity: 0.15 !important;
+  border-radius: 12px;
+}
