@@ -1,6 +1,7 @@
-import { spawn } from "child_process";
-import { existsSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
+import { GarminConnect } from "garmin-connect";
 
 export interface GarminProfile {
   email: string;
@@ -33,170 +34,125 @@ interface SyncOptions {
   email: string;
   password: string;
   limit?: number;
-  /** Origin of the current request, e.g. https://your-app.vercel.app */
+  /** Ignored — kept for call-site compatibility */
   baseUrl?: string;
 }
 
-function isVercelRuntime() {
-  return Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
-}
+type GarminActivityRaw = {
+  activityId?: number;
+  activityName?: string;
+  description?: string | null;
+  distance?: number;
+  movingDuration?: number;
+  duration?: number;
+  elapsedDuration?: number;
+  elevationGain?: number | null;
+  averageSpeed?: number | null;
+  maxSpeed?: number | null;
+  averageHR?: number | null;
+  maxHR?: number | null;
+  startTimeGMT?: string;
+  startTimeLocal?: string;
+  activityType?: { typeKey?: string };
+};
 
-function sanitizeSecret(value: string | undefined): string {
-  if (!value) return "";
-  const firstLine = value.split(/\r?\n/)[0]?.trim() ?? "";
-  return firstLine.split(/\s+/)[0] ?? "";
-}
+function normalizeActivity(activity: GarminActivityRaw): GarminActivity | null {
+  if (activity.activityId == null) return null;
 
-function getInternalBaseUrl(explicit?: string) {
-  if (explicit) return explicit.replace(/\/$/, "");
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
-  }
-  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
-  }
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-  return "http://127.0.0.1:3000";
-}
-
-async function fetchViaPythonApi(
-  path: string,
-  body: Record<string, unknown>,
-  baseUrl?: string
-): Promise<unknown> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+  return {
+    id: activity.activityId,
+    name: activity.activityName || "Untitled activity",
+    type: activity.activityType?.typeKey || "other",
+    distance: activity.distance || 0,
+    movingTime: activity.movingDuration || activity.duration || 0,
+    elapsedTime:
+      activity.elapsedDuration ||
+      activity.duration ||
+      activity.movingDuration ||
+      0,
+    totalElevationGain: activity.elevationGain ?? null,
+    averageSpeed: activity.averageSpeed ?? null,
+    maxSpeed: activity.maxSpeed ?? null,
+    averageHeartrate: activity.averageHR ?? null,
+    maxHeartrate: activity.maxHR ?? null,
+    startDate: activity.startTimeGMT || activity.startTimeLocal || "",
+    startDateLocal: activity.startTimeLocal || activity.startTimeGMT || "",
+    description: activity.description ?? null,
   };
-
-  // Dedicated internal secret only (do not reuse the Anthropic key as a header)
-  const secret = sanitizeSecret(process.env.GARMIN_INTERNAL_SECRET);
-  if (secret) {
-    headers["x-internal-secret"] = secret;
-  }
-
-  // Bypass Vercel Deployment Protection for server-to-server calls
-  const bypass = sanitizeSecret(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
-  if (bypass) {
-    headers["x-vercel-protection-bypass"] = bypass;
-  }
-
-  const url = `${getInternalBaseUrl(baseUrl)}${path}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  const text = await response.text();
-  let payload: { error?: string; [key: string]: unknown } = {};
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = {};
-  }
-
-  if (!response.ok) {
-    if (typeof payload.error === "string") {
-      throw new Error(payload.error);
-    }
-    if (response.status === 401) {
-      throw new Error(
-        "Garmin sync endpoint returned 401. If Deployment Protection is on, add VERCEL_AUTOMATION_BYPASS_SECRET in Vercel env, or disable Protection for this project."
-      );
-    }
-    if (response.status === 404) {
-      throw new Error(
-        "Garmin Python API route not found (404). Redeploy and confirm /api/garmin-sync.py is included in the Vercel build."
-      );
-    }
-    throw new Error(
-      `Garmin API failed (${response.status})${text ? `: ${text.slice(0, 200)}` : ""}`
-    );
-  }
-
-  return payload;
 }
 
-function runLocalPythonScript(
-  scriptName: string,
-  args: string[]
-): Promise<string> {
-  const scriptPath = join(process.cwd(), "scripts", scriptName);
-  const localPython = join(process.cwd(), ".venv", "bin", "python");
-  const pythonExecutable = existsSync(localPython) ? localPython : "python3";
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(pythonExecutable, [scriptPath, ...args], {
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: "1",
-      },
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", (error) => {
-      reject(
-        new Error(
-          error.message.includes("ENOENT")
-            ? "Python is not available. Install Python 3 locally, or deploy with the Vercel Python API routes."
-            : error.message
-        )
-      );
-    });
-
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr || `Garmin script failed with exit code ${code}`));
-        return;
-      }
-      resolve(stdout);
-    });
+async function loginClient(email: string, password: string) {
+  const client = new GarminConnect({
+    username: email,
+    password,
   });
+  await client.login();
+  return client;
 }
 
 export async function fetchGarminData({
   email,
   password,
   limit = 50,
-  baseUrl,
 }: SyncOptions): Promise<GarminSyncResult> {
-  if (isVercelRuntime()) {
-    return (await fetchViaPythonApi(
-      "/api/garmin-sync",
-      { email, password, limit },
-      baseUrl
-    )) as GarminSyncResult;
-  }
-
-  const stdout = await runLocalPythonScript("garmin_sync.py", [
-    "--email",
-    email,
-    "--password",
-    password,
-    "--limit",
-    String(limit),
-  ]);
-
   try {
-    return JSON.parse(stdout) as GarminSyncResult;
+    const client = await loginClient(email, password);
+    const profile = await client.getUserProfile();
+    const activities = (await client.getActivities(
+      0,
+      limit
+    )) as GarminActivityRaw[];
+
+    return {
+      profile: {
+        email,
+        fullName: profile?.fullName ?? null,
+      },
+      activities: activities
+        .map(normalizeActivity)
+        .filter((a): a is GarminActivity => a !== null),
+    };
   } catch (error) {
     throw new Error(
-      `Failed to parse Garmin sync response: ${
-        error instanceof Error ? error.message : "unknown error"
-      }`
+      error instanceof Error
+        ? `Garmin login/sync failed: ${error.message}`
+        : "Garmin login/sync failed"
     );
+  }
+}
+
+function gpxPointsFromXml(xmlText: string): [number, number][] {
+  const points: [number, number][] = [];
+  const pattern =
+    /<trkpt[^>]*lat="([0-9.+-]+)"[^>]*lon="([0-9.+-]+)"[^>]*>/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(xmlText)) !== null) {
+    points.push([parseFloat(match[1]), parseFloat(match[2])]);
+  }
+  return points;
+}
+
+async function downloadGpxText(
+  client: GarminConnect,
+  activityId: number
+): Promise<string | null> {
+  const dir = mkdtempSync(join(tmpdir(), "garmin-gpx-"));
+  try {
+    await client.downloadOriginalActivityData(
+      { activityId },
+      dir,
+      "gpx"
+    );
+    const filePath = join(dir, `${activityId}.gpx`);
+    return readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
   }
 }
 
@@ -207,34 +163,43 @@ export async function fetchGarminRoutes(params: {
   activityType?: string;
   baseUrl?: string;
 }): Promise<{ points: [number, number][]; activityCount: number }> {
-  if (isVercelRuntime()) {
-    return (await fetchViaPythonApi(
-      "/api/garmin-routes",
-      {
-        email: params.email,
-        password: params.password,
-        limit: params.limit,
-        activityType: params.activityType || "running",
-      },
-      params.baseUrl
-    )) as { points: [number, number][]; activityCount: number };
-  }
-
-  const stdout = await runLocalPythonScript("garmin_routes.py", [
-    "--email",
-    params.email,
-    "--password",
-    params.password,
-    "--limit",
-    String(params.limit),
-    "--activity-type",
-    params.activityType || "running",
-  ]);
-
   try {
-    return JSON.parse(stdout);
-  } catch {
-    throw new Error("Failed to parse garmin_routes.py output");
+    const client = await loginClient(params.email, params.password);
+    const activityType = (params.activityType || "running").toLowerCase();
+    const activities = (await client.getActivities(
+      0,
+      Math.max(1, params.limit * 2)
+    )) as GarminActivityRaw[];
+
+    const runIds: number[] = [];
+    for (const activity of activities) {
+      const typeKey = activity.activityType?.typeKey?.toLowerCase() || "";
+      if (
+        activity.activityId != null &&
+        (!activityType || typeKey === activityType || typeKey.includes(activityType))
+      ) {
+        runIds.push(activity.activityId);
+      }
+      if (runIds.length >= params.limit) break;
+    }
+
+    const heatPoints: [number, number][] = [];
+    for (const activityId of runIds) {
+      const xml = await downloadGpxText(client, activityId);
+      if (!xml) continue;
+      heatPoints.push(...gpxPointsFromXml(xml));
+    }
+
+    return {
+      points: heatPoints,
+      activityCount: runIds.length,
+    };
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Garmin routes failed: ${error.message}`
+        : "Garmin routes failed"
+    );
   }
 }
 

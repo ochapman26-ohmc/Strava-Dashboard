@@ -39,7 +39,7 @@ export function ConnectGarminForm() {
       <h2 className="mb-2 text-xl font-semibold">Connect Garmin Connect</h2>
       <p className="mb-5 text-sm text-muted">
         Sign in with your Garmin Connect credentials to sync your activities for
-        free using the unofficial `python-garminconnect` library.
+        free using an unofficial Garmin Connect client.
       </p>
       <p className="mb-5 text-xs text-muted">
         This local prototype stores your Garmin email and password in the app&apos;s

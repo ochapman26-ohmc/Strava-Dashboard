@@ -1,13 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/garmin-sync.py": {
-      "maxDuration": 60,
-      "excludeFiles": "{.venv/**,node_modules/**,.next/**,**/*.test.py}"
+    "src/app/api/auth/garmin/route.ts": {
+      "maxDuration": 60
     },
-    "api/garmin-routes.py": {
-      "maxDuration": 120,
-      "excludeFiles": "{.venv/**,node_modules/**,.next/**,**/*.test.py}"
+    "src/app/api/heatmap/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/sync/route.ts": {
+      "maxDuration": 60
     }
   }
 }
