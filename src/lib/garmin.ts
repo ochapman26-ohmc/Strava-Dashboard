@@ -33,63 +33,89 @@ interface SyncOptions {
   email: string;
   password: string;
   limit?: number;
+  /** Origin of the current request, e.g. https://your-app.vercel.app */
+  baseUrl?: string;
 }
 
 function isVercelRuntime() {
   return Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
 }
 
-function getInternalBaseUrl() {
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
+function sanitizeSecret(value: string | undefined): string {
+  if (!value) return "";
+  const firstLine = value.split(/\r?\n/)[0]?.trim() ?? "";
+  return firstLine.split(/\s+/)[0] ?? "";
+}
+
+function getInternalBaseUrl(explicit?: string) {
+  if (explicit) return explicit.replace(/\/$/, "");
   if (process.env.NEXT_PUBLIC_APP_URL) {
     return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
   }
   return "http://127.0.0.1:3000";
 }
 
-function sanitizeSecret(value: string | undefined): string {
-  if (!value) return "";
-  // Take first line only — common misconfig is pasting KEY + MODEL into one env var
-  const firstLine = value.split(/\r?\n/)[0]?.trim() ?? "";
-  // Header values cannot contain spaces or control characters
-  const beforeSpace = firstLine.split(/\s+/)[0] ?? "";
-  return beforeSpace;
-}
-
-function getInternalSecret() {
-  return sanitizeSecret(
-    process.env.GARMIN_INTERNAL_SECRET || process.env.ANTHROPIC_API_KEY
-  );
-}
-
 async function fetchViaPythonApi(
   path: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  baseUrl?: string
 ): Promise<unknown> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const secret = getInternalSecret();
+
+  // Dedicated internal secret only (do not reuse the Anthropic key as a header)
+  const secret = sanitizeSecret(process.env.GARMIN_INTERNAL_SECRET);
   if (secret) {
     headers["x-internal-secret"] = secret;
   }
 
-  const response = await fetch(`${getInternalBaseUrl()}${path}`, {
+  // Bypass Vercel Deployment Protection for server-to-server calls
+  const bypass = sanitizeSecret(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
+  if (bypass) {
+    headers["x-vercel-protection-bypass"] = bypass;
+  }
+
+  const url = `${getInternalBaseUrl(baseUrl)}${path}`;
+  const response = await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const text = await response.text();
+  let payload: { error?: string; [key: string]: unknown } = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = {};
+  }
+
   if (!response.ok) {
+    if (typeof payload.error === "string") {
+      throw new Error(payload.error);
+    }
+    if (response.status === 401) {
+      throw new Error(
+        "Garmin sync endpoint returned 401. If Deployment Protection is on, add VERCEL_AUTOMATION_BYPASS_SECRET in Vercel env, or disable Protection for this project."
+      );
+    }
+    if (response.status === 404) {
+      throw new Error(
+        "Garmin Python API route not found (404). Redeploy and confirm /api/garmin-sync.py is included in the Vercel build."
+      );
+    }
     throw new Error(
-      typeof payload?.error === "string"
-        ? payload.error
-        : `Garmin API failed (${response.status})`
+      `Garmin API failed (${response.status})${text ? `: ${text.slice(0, 200)}` : ""}`
     );
   }
+
   return payload;
 }
 
@@ -144,13 +170,14 @@ export async function fetchGarminData({
   email,
   password,
   limit = 50,
+  baseUrl,
 }: SyncOptions): Promise<GarminSyncResult> {
   if (isVercelRuntime()) {
-    return (await fetchViaPythonApi("/api/garmin-sync", {
-      email,
-      password,
-      limit,
-    })) as GarminSyncResult;
+    return (await fetchViaPythonApi(
+      "/api/garmin-sync",
+      { email, password, limit },
+      baseUrl
+    )) as GarminSyncResult;
   }
 
   const stdout = await runLocalPythonScript("garmin_sync.py", [
@@ -178,14 +205,19 @@ export async function fetchGarminRoutes(params: {
   password: string;
   limit: number;
   activityType?: string;
+  baseUrl?: string;
 }): Promise<{ points: [number, number][]; activityCount: number }> {
   if (isVercelRuntime()) {
-    return (await fetchViaPythonApi("/api/garmin-routes", {
-      email: params.email,
-      password: params.password,
-      limit: params.limit,
-      activityType: params.activityType || "running",
-    })) as { points: [number, number][]; activityCount: number };
+    return (await fetchViaPythonApi(
+      "/api/garmin-routes",
+      {
+        email: params.email,
+        password: params.password,
+        limit: params.limit,
+        activityType: params.activityType || "running",
+      },
+      params.baseUrl
+    )) as { points: [number, number][]; activityCount: number };
   }
 
   const stdout = await runLocalPythonScript("garmin_routes.py", [

@@ -19,7 +19,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const garminData = await fetchGarminData({ email, password, limit: 50 });
+    const garminData = await fetchGarminData({
+      email,
+      password,
+      limit: 50,
+      baseUrl: request.nextUrl.origin,
+    });
     const { firstName, lastName } = splitFullName(garminData.profile.fullName);
 
     const existing = db.users.findFirst({ garminEmail: email });

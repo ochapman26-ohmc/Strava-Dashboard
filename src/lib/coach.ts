@@ -35,13 +35,17 @@ Structure your response with these sections:
 Be direct, specific, and reference actual numbers from the dashboard. If goals are not set, encourage setting them and still provide training insights.`;
 
 function getAnthropicClient() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const raw = process.env.ANTHROPIC_API_KEY;
+  if (!raw) return null;
+  // First line / first token — Vercel env vars are sometimes pasted with extra lines
+  const apiKey = raw.split(/\r?\n/)[0]?.trim().split(/\s+/)[0] ?? "";
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }
 
 function getModel() {
-  return process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+  const raw = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+  return raw.split(/\r?\n/)[0]?.trim().split(/\s+/)[0] || "claude-sonnet-4-6";
 }
 
 async function callClaude(params: {

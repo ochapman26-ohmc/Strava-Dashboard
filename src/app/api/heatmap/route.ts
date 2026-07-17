@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       password: user.garminPassword,
       limit,
       activityType,
+      baseUrl: url.origin,
     });
 
     return NextResponse.json(data);
