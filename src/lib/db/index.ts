@@ -74,6 +74,24 @@ export const db = {
       writeDb(data);
       return user;
     },
+    /** Insert or update by id — used to hydrate session users onto ephemeral Vercel storage */
+    upsert(user: User): User {
+      const data = readDb();
+      const idx = data.users.findIndex(
+        (u) => u.id === user.id || u.garminEmail === user.garminEmail
+      );
+      if (idx >= 0) {
+        data.users[idx] = { ...data.users[idx], ...user };
+        writeDb(data);
+        return data.users[idx];
+      }
+      data.users.push(user);
+      if (user.id >= data.nextIds.users) {
+        data.nextIds.users = user.id + 1;
+      }
+      writeDb(data);
+      return user;
+    },
     update(id: number, values: Partial<User>): User | undefined {
       const data = readDb();
       const idx = data.users.findIndex((u) => u.id === id);

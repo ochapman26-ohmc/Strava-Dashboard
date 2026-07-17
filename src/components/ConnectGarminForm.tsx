@@ -32,6 +32,7 @@ export function ConnectGarminForm() {
 
     router.push("/dashboard");
     router.refresh();
+    setLoading(false);
   }
 
   return (

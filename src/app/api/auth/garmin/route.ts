@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { initDb, db } from "@/lib/db";
-import { sessionCookieOptions } from "@/lib/session";
+import { sessionCookieOptions, stableUserId } from "@/lib/session";
 import { fetchGarminData, splitFullName } from "@/lib/garmin";
+import type { User } from "@/lib/db/schema";
 
 initDb();
 
@@ -23,56 +23,60 @@ export async function POST(request: NextRequest) {
       email,
       password,
       limit: 50,
-      baseUrl: request.nextUrl.origin,
     });
     const { firstName, lastName } = splitFullName(garminData.profile.fullName);
 
-    const existing = db.users.findFirst({ garminEmail: email });
+    const user: User = {
+      id: stableUserId(email),
+      garminEmail: email,
+      garminPassword: password,
+      firstName,
+      lastName,
+      profilePhoto: null,
+      createdAt: new Date().toISOString(),
+    };
 
-    const user = existing
-      ? db.users.update(existing.id, {
-          garminEmail: email,
-          garminPassword: password,
-          firstName,
-          lastName,
-        })
-      : db.users.insert({
-          garminEmail: email,
-          garminPassword: password,
-          firstName,
-          lastName,
-          profilePhoto: null,
-        });
-
-    if (!user) {
-      return NextResponse.json({ error: "Failed to save user." }, { status: 500 });
+    try {
+      db.users.upsert(user);
+    } catch {
+      // Continue — session cookie is the source of truth on Vercel
     }
 
     for (const activity of garminData.activities) {
-      db.activities.upsert({
-        id: activity.id,
-        userId: user.id,
-        name: activity.name,
-        type: activity.type,
-        distance: activity.distance,
-        movingTime: activity.movingTime,
-        elapsedTime: activity.elapsedTime,
-        totalElevationGain: activity.totalElevationGain,
-        averageSpeed: activity.averageSpeed,
-        maxSpeed: activity.maxSpeed,
-        averageHeartrate: activity.averageHeartrate,
-        maxHeartrate: activity.maxHeartrate,
-        startDate: activity.startDate,
-        startDateLocal: activity.startDateLocal,
-        description: activity.description,
-        syncedAt: new Date().toISOString(),
-      });
+      try {
+        db.activities.upsert({
+          id: activity.id,
+          userId: user.id,
+          name: activity.name,
+          type: activity.type,
+          distance: activity.distance,
+          movingTime: activity.movingTime,
+          elapsedTime: activity.elapsedTime,
+          totalElevationGain: activity.totalElevationGain,
+          averageSpeed: activity.averageSpeed,
+          maxSpeed: activity.maxSpeed,
+          averageHeartrate: activity.averageHeartrate,
+          maxHeartrate: activity.maxHeartrate,
+          startDate: activity.startDate,
+          startDateLocal: activity.startDateLocal,
+          description: activity.description,
+          syncedAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort activity persist
+      }
     }
 
-    const cookieStore = await cookies();
-    cookieStore.set(sessionCookieOptions(user.id));
-
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    const cookie = sessionCookieOptions(user);
+    response.cookies.set(cookie.name, cookie.value, {
+      httpOnly: cookie.httpOnly,
+      secure: cookie.secure,
+      sameSite: cookie.sameSite,
+      maxAge: cookie.maxAge,
+      path: cookie.path,
+    });
+    return response;
   } catch (error) {
     return NextResponse.json(
       {
