@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/garmin-sync.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{.venv/**,node_modules/**,.next/**,**/*.test.py}"
+    },
+    "api/garmin-routes.py": {
+      "maxDuration": 120,
+      "excludeFiles": "{.venv/**,node_modules/**,.next/**,**/*.test.py}"
+    }
+  }
+}

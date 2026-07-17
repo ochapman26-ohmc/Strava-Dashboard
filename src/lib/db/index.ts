@@ -2,7 +2,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { Database, User, Activity, Goal, CoachMessage, DashboardWidget } from "./schema";
 
-const DATA_DIR = join(process.cwd(), "data");
+// On Vercel the project filesystem is read-only; use /tmp for writable storage.
+// Note: /tmp is ephemeral per instance — use a real database for production persistence.
+const DATA_DIR = process.env.VERCEL
+  ? join("/tmp", "stride-coach-data")
+  : join(process.cwd(), "data");
 const DB_PATH = join(DATA_DIR, "db.json");
 
 const EMPTY_DB: Database = {

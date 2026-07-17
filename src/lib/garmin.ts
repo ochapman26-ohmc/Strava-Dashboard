@@ -35,26 +35,67 @@ interface SyncOptions {
   limit?: number;
 }
 
-export async function fetchGarminData({
-  email,
-  password,
-  limit = 50,
-}: SyncOptions): Promise<GarminSyncResult> {
-  const scriptPath = join(process.cwd(), "scripts", "garmin_sync.py");
+function isVercelRuntime() {
+  return Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+}
+
+function getInternalBaseUrl() {
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  }
+  return "http://127.0.0.1:3000";
+}
+
+function getInternalSecret() {
+  return (
+    process.env.GARMIN_INTERNAL_SECRET ||
+    process.env.ANTHROPIC_API_KEY ||
+    ""
+  );
+}
+
+async function fetchViaPythonApi(
+  path: string,
+  body: Record<string, unknown>
+): Promise<unknown> {
+  const response = await fetch(`${getInternalBaseUrl()}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": getInternalSecret(),
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof payload?.error === "string"
+        ? payload.error
+        : `Garmin API failed (${response.status})`
+    );
+  }
+  return payload;
+}
+
+function runLocalPythonScript(
+  scriptName: string,
+  args: string[]
+): Promise<string> {
+  const scriptPath = join(process.cwd(), "scripts", scriptName);
   const localPython = join(process.cwd(), ".venv", "bin", "python");
   const pythonExecutable = existsSync(localPython) ? localPython : "python3";
 
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      pythonExecutable,
-      [scriptPath, "--email", email, "--password", password, "--limit", String(limit)],
-      {
-        env: {
-          ...process.env,
-          PYTHONUNBUFFERED: "1",
-        },
-      }
-    );
+    const child = spawn(pythonExecutable, [scriptPath, ...args], {
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+      },
+    });
 
     let stdout = "";
     let stderr = "";
@@ -68,28 +109,89 @@ export async function fetchGarminData({
     });
 
     child.on("error", (error) => {
-      reject(error);
+      reject(
+        new Error(
+          error.message.includes("ENOENT")
+            ? "Python is not available. Install Python 3 locally, or deploy with the Vercel Python API routes."
+            : error.message
+        )
+      );
     });
 
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(stderr || `Garmin sync failed with exit code ${code}`));
+        reject(new Error(stderr || `Garmin script failed with exit code ${code}`));
         return;
       }
-
-      try {
-        resolve(JSON.parse(stdout) as GarminSyncResult);
-      } catch (error) {
-        reject(
-          new Error(
-            `Failed to parse Garmin sync response: ${
-              error instanceof Error ? error.message : "unknown error"
-            }`
-          )
-        );
-      }
+      resolve(stdout);
     });
   });
+}
+
+export async function fetchGarminData({
+  email,
+  password,
+  limit = 50,
+}: SyncOptions): Promise<GarminSyncResult> {
+  if (isVercelRuntime()) {
+    return (await fetchViaPythonApi("/api/garmin-sync", {
+      email,
+      password,
+      limit,
+    })) as GarminSyncResult;
+  }
+
+  const stdout = await runLocalPythonScript("garmin_sync.py", [
+    "--email",
+    email,
+    "--password",
+    password,
+    "--limit",
+    String(limit),
+  ]);
+
+  try {
+    return JSON.parse(stdout) as GarminSyncResult;
+  } catch (error) {
+    throw new Error(
+      `Failed to parse Garmin sync response: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`
+    );
+  }
+}
+
+export async function fetchGarminRoutes(params: {
+  email: string;
+  password: string;
+  limit: number;
+  activityType?: string;
+}): Promise<{ points: [number, number][]; activityCount: number }> {
+  if (isVercelRuntime()) {
+    return (await fetchViaPythonApi("/api/garmin-routes", {
+      email: params.email,
+      password: params.password,
+      limit: params.limit,
+      activityType: params.activityType || "running",
+    })) as { points: [number, number][]; activityCount: number };
+  }
+
+  const stdout = await runLocalPythonScript("garmin_routes.py", [
+    "--email",
+    params.email,
+    "--password",
+    params.password,
+    "--limit",
+    String(params.limit),
+    "--activity-type",
+    params.activityType || "running",
+  ]);
+
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error("Failed to parse garmin_routes.py output");
+  }
 }
 
 export function splitFullName(fullName: string | null) {
