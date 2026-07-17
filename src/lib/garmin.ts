@@ -49,11 +49,18 @@ function getInternalBaseUrl() {
   return "http://127.0.0.1:3000";
 }
 
+function sanitizeSecret(value: string | undefined): string {
+  if (!value) return "";
+  // Take first line only — common misconfig is pasting KEY + MODEL into one env var
+  const firstLine = value.split(/\r?\n/)[0]?.trim() ?? "";
+  // Header values cannot contain spaces or control characters
+  const beforeSpace = firstLine.split(/\s+/)[0] ?? "";
+  return beforeSpace;
+}
+
 function getInternalSecret() {
-  return (
-    process.env.GARMIN_INTERNAL_SECRET ||
-    process.env.ANTHROPIC_API_KEY ||
-    ""
+  return sanitizeSecret(
+    process.env.GARMIN_INTERNAL_SECRET || process.env.ANTHROPIC_API_KEY
   );
 }
 
@@ -61,12 +68,17 @@ async function fetchViaPythonApi(
   path: string,
   body: Record<string, unknown>
 ): Promise<unknown> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const secret = getInternalSecret();
+  if (secret) {
+    headers["x-internal-secret"] = secret;
+  }
+
   const response = await fetch(`${getInternalBaseUrl()}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-internal-secret": getInternalSecret(),
-    },
+    headers,
     body: JSON.stringify(body),
   });
 

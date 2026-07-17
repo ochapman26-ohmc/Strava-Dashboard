@@ -10,9 +10,13 @@ from garmin_lib import sync_activities
 
 
 def _authorized(headers: dict[str, str]) -> bool:
-    secret = os.environ.get("GARMIN_INTERNAL_SECRET") or os.environ.get(
+    raw = os.environ.get("GARMIN_INTERNAL_SECRET") or os.environ.get(
         "ANTHROPIC_API_KEY"
     )
+    if not raw:
+        return True
+    # First line / first token only — avoids broken multi-line Vercel env values
+    secret = raw.splitlines()[0].strip().split()[0] if raw.strip() else ""
     if not secret:
         return True
     return headers.get("x-internal-secret") == secret
