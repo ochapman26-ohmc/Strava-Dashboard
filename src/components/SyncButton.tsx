@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import type { Activity } from "@/lib/db/schema";
 
 interface SyncButtonProps {
-  onSynced?: () => void;
+  onSynced?: (activities?: Activity[]) => void;
 }
 
 export function SyncButton({ onSynced }: SyncButtonProps) {
@@ -18,12 +19,12 @@ export function SyncButton({ onSynced }: SyncButtonProps) {
     if (res.ok) {
       setMessage(`Synced ${data.synced} activities`);
       if (onSynced) {
-        setTimeout(onSynced, 500);
+        onSynced(data.activities);
       } else {
         setTimeout(() => window.location.reload(), 1000);
       }
     } else {
-      setMessage("Sync failed");
+      setMessage(data.error || "Sync failed");
     }
     setSyncing(false);
   }

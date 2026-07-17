@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { initDb } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/auth";
-import { syncActivities, updateGoalProgress } from "@/lib/activities";
+import { getActivitiesForUser, updateGoalProgress } from "@/lib/activities";
 
 initDb();
 
@@ -17,8 +17,24 @@ export async function POST() {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const count = await syncActivities(user);
-  await updateGoalProgress(userId);
-
-  return NextResponse.json({ synced: count });
+  try {
+    const activities = await getActivitiesForUser(user, { forceSync: true });
+    try {
+      await updateGoalProgress(userId, activities);
+    } catch {
+      // goals are best-effort on ephemeral storage
+    }
+    return NextResponse.json({
+      synced: activities.length,
+      activities,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Sync failed",
+      },
+      { status: 500 }
+    );
+  }
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { initDb, db } from "@/lib/db";
+import { initDb } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { getActivitiesForUser } from "@/lib/activities";
 import { METRICS } from "@/lib/dashboard/metrics";
 import type { TimeRange } from "@/lib/dashboard/types";
 
@@ -12,7 +14,30 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const activities = db.activities.findMany({ userId }, "startDate");
+  const user = await getAuthenticatedUser(userId);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let activities: Awaited<ReturnType<typeof getActivitiesForUser>> = [];
+  try {
+    activities = await getActivitiesForUser(user);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to load activities from Garmin",
+        metrics: METRICS,
+        activityTypes: [],
+        timeRanges: [],
+        activities: [],
+      },
+      { status: 500 }
+    );
+  }
+
   const activityTypes = [...new Set(activities.map((a) => a.type))];
 
   return NextResponse.json({

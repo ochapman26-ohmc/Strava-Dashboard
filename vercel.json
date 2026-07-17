@@ -4,6 +4,9 @@
     "src/app/api/auth/garmin/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/dashboard/catalog/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/heatmap/route.ts": {
       "maxDuration": 120
     },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { initDb, db } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/auth";
+import { getActivitiesForUser } from "@/lib/activities";
 import { generateDashboardInsights } from "@/lib/coach";
 import type { TimeRange } from "@/lib/dashboard/types";
 
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
   const timeRange = (body.timeRange || "30d") as TimeRange;
 
   const widgets = db.dashboardWidgets.findMany({ userId });
-  const activities = db.activities.findMany({ userId }, "startDate");
+  const activities = await getActivitiesForUser(user);
   const goals = db.goals.findMany({ userId });
 
   try {

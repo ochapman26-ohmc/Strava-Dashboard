@@ -120,7 +120,8 @@ export async function generateCoachResponse(
   user: User,
   userMessage: string
 ): Promise<string> {
-  const recentActivities = db.activities.findMany({ userId: user.id }, "startDate").slice(0, 30);
+  const { getActivitiesForUser } = await import("./activities");
+  const recentActivities = (await getActivitiesForUser(user)).slice(0, 30);
   const userGoals = db.goals.findMany({ userId: user.id });
   const chatHistory = db.coachMessages.findMany({ userId: user.id }, 10);
 

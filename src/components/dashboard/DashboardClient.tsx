@@ -58,6 +58,16 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     setLoading(false);
   }, []);
 
+  const handleSynced = useCallback(
+    (syncedActivities?: Activity[]) => {
+      if (syncedActivities?.length) {
+        setActivities(syncedActivities);
+      } else {
+        void loadDashboard();
+      }
+    },
+    [loadDashboard]
+  );
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
@@ -106,7 +116,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               </option>
             ))}
           </select>
-          <SyncButton onSynced={loadDashboard} />
+          <SyncButton onSynced={handleSynced} />
           <button
             onClick={() => setEditMode((e) => !e)}
             className={editMode ? "btn-primary text-sm" : "btn-secondary text-sm"}
